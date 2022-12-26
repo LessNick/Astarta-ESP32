@@ -26,7 +26,6 @@ Scene::Scene() {
 }
 
 void Scene::refresh() {
-
 	int nAtariCMD = digitalRead(ATARI_CMD_PIN);
 	if (atariCMD != nAtariCMD) {
 		atariCMD = nAtariCMD;
@@ -44,7 +43,7 @@ void Scene::refresh() {
 	if (!atariSio.isBusy()) {
 	
 		if (netInited == false && netIniting == false) {
-			_net.init(&_disp);
+			_net.init(&_disp, &winMsg);
 			netIniting = true;
 
 		} else if (netInited == false && netIniting == true) {
@@ -54,7 +53,9 @@ void Scene::refresh() {
 			}
 		
 		} else if (netInited == true && netIniting == false) {
-			_net.update(_forceUpdate);
+			if(_net.update(_forceUpdate)) {
+				showMainMenu();
+			}
 			_forceUpdate = false;
 		}
 
@@ -489,7 +490,7 @@ void Scene::showSelect(String devName) {
 		file = root.openNextFile();
 		while(file) {
 			String fileName = String(file.name());
-			fileName = fileName.substring(startCut, fileName.length());
+			// fileName = fileName.substring(startCut, fileName.length());
 			if(file.isDirectory()){
 				mList[dirIdx].mIcon = iconDir;
 				mList[dirIdx].mType = MTYPE_DIR;
