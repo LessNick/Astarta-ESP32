@@ -13,11 +13,10 @@
 #include "message.h"
 #include "iconsRSSI.h"
 
+#include "configParser.h"
+
 #define FTP_CTRL_PORT		21		// Command port on wich server is listening
 #define FTP_DATA_PORT_PASV	50009	// Data port in passive mode
-
-// WiFiServer	ftpServer(FTP_CTRL_PORT);
-// WiFiServer	dataServer(FTP_DATA_PORT_PASV);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //// Структура данных дата + время
@@ -45,22 +44,26 @@ const byte RSSI_UNUSABLE	= 0x05;	// -90 dBm = Unusable - Approaching or drowning
 class Net {
 	public:
 		Net();
-		void 				init(DispST7735 *disp, Message *winMsg);
+		void 				init(DispST7735 *disp, Message *winMsg, ConfigParser *cp);
 		bool				checkWiFi();
 		bool				update(bool force);
 		NetDateTime*		getDateTime();
 		bool				isTimeInited();
 
+		void 				tPrint(String str);
+
 	private:
 		DispST7735			*_disp;
 		Message				*_winMsg;
 
-		const char*			ssid		= "PUT_YOUR_SID_ID_HERE";
-		const char*			password	= "PUT_YOUR_PASSWORD_HERE";
-		const String		hostname	= "astarta-esp32";
+		ConfigParser		*_cp;
 
-		const String		ftpLogin	= "user";
-		const String		ftpPass 	= "password";
+		String				ssid;
+		String				password;
+		String				hostname;
+
+		String				ftpLogin;
+		String				ftpPass;
 
 		WiFiServer			*ftpServer;
 		WiFiServer			*dataServer;

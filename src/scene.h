@@ -24,6 +24,8 @@
 
 #include "net.h"
 
+#include "configParser.h"
+
 ////////////////////////////////////////////////////////////////////////////////////////
 #define SCENE_START			0	// Режим отображения стартового экрана
 #define SCENE_REBOOT		1	// Режим отображения окна с ошибкой SD-карты
@@ -77,6 +79,7 @@ class Scene {
 		void		checkSD();
 		void		refresh();
 		
+		void		loadConfig();
 		void		showStart();
 		void		showMainMenu();
 
@@ -134,6 +137,8 @@ class Scene {
 		
 		bool		atariCMD;
 		bool		_forceUpdate = false;
+
+		ConfigParser _cp;
 };
 
 #endif

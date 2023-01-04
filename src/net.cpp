@@ -2,9 +2,17 @@
 
 Net::Net() {}
 
-void Net::init(DispST7735 *disp, Message *winMsg) {
+void Net::init(DispST7735 *disp, Message *winMsg, ConfigParser *cp) {
 	_disp = disp;
 	_winMsg = winMsg;
+	_cp = cp;
+
+	ssid = _cp->getValue("ssid");
+	password = _cp->getValue("password");
+	hostname = _cp->getValue("hostname");
+
+	ftpLogin = _cp->getValue("ftpLogin");
+	ftpPass = _cp->getValue("ftpPass");
 
 	WiFi.mode(WIFI_STA);
 	WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
@@ -13,13 +21,24 @@ void Net::init(DispST7735 *disp, Message *winMsg) {
 	aPos = 0;
 	tryCount = 0;
 	timeInited = false;
-	WiFi.begin(ssid, password);
+
+	int ssidLen = ssid.length() + 1; 
+	char _ssid[ssidLen];
+	ssid.toCharArray(_ssid, ssidLen);
+
+	int passwordLen = password.length() + 1; 
+	char _password[passwordLen];
+	password.toCharArray(_password, passwordLen);
+
+	WiFi.begin(_ssid, _password);
 
 	_lastMin = 0;
 	_lastRSSI = RSSI_NONE;
 
 	rootPath = "/";
 	renamePath = "";
+
+	checkCount = 0;
 	
 }
 
@@ -50,7 +69,7 @@ bool Net::checkWiFi() {
 		delay(10);
 
 	} else {
-		if (checkCount > 10000) {
+		if (checkCount > 1000) {
 			checkCount = 0;
 
 			if ((tryCount > 50) && (status == WL_NO_SSID_AVAIL || status == WL_CONNECT_FAILED || status == WL_DISCONNECTED)) {
@@ -213,16 +232,28 @@ bool Net::checkFTP() {
 	return redraw;
 }
 
+void Net::tPrint(String str) {
+	int strLen = str.length() + 1; 
+	char charArray[strLen];
+	str.toCharArray(charArray, strLen);
+	for (int i=0; i<strLen; i++) {
+		LOG.print(charArray[i], HEX);
+		LOG.print(",");
+	}
+	LOG.println();
+}
+
 void Net::parseCmd(WiFiClient client, String currentCmd, String currentArgs) {
 
 #ifdef DEBUG
-	LOG.println("[FTP] CMD=" + currentCmd);
-	LOG.println("[FTP] ARGS=" + currentArgs);
+	LOG.println("[FTP] CMD=\"" + currentCmd + "\"");
+	LOG.println("[FTP] ARGS=\"" + currentArgs + "\"");
 #endif
 
 	WiFiClient data = dataServer->available();
 
 	if (currentCmd == "USER") {
+
 		if (currentArgs == ftpLogin) {
 			client.println("331 " + currentArgs + " login ok");
 		} else {

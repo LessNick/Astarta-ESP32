@@ -1,11 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AstartA Project v2.00 pre-alpha
-// Copyright 2022 © LessNick aka breeze/fishbonce crew
+// Copyright 2022, 2023 © LessNick aka breeze/fishbonce crew
 // https://github.com/LessNick/Astarta-ESP32
 // https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
-// Required: ESP32-WROOM + DISPLAY ST7735 + SD CARD & 4 BUTTONS =)
+// Required: ESP-WROOM-32 + DISPLAY ST7735 + SD CARD & 4 BUTTONS =)
 // Supported: ATR (Read/Write), XFD, PRO, XEX & CAS (read only) + APE TIME
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -22,9 +22,7 @@ void setup() {
 #endif
 
 	ATARI_SIO.begin(19200);
-
-	s.showStart();		// Start with logo
-	//s.checkSD();		// Start 
+	s.showStart();
 
 }
 

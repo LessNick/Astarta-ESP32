@@ -28,7 +28,7 @@
 
 #define BTN_C_PLAY			BTN_PIN_ENTER
 
-// #define DEBUG				true
+//#define DEBUG				true
 
 #define MENU_TOP_COLOR		COLOR(26,42,130)
 #define MENU_BOTTOM_COLOR	COLOR(47,70,172)

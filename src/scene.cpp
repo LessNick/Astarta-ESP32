@@ -42,21 +42,26 @@ void Scene::refresh() {
 
 	if (!atariSio.isBusy()) {
 	
-		if (netInited == false && netIniting == false) {
-			_net.init(&_disp, &winMsg);
-			netIniting = true;
+		if (currentScene != SCENE_START && currentScene != SCENE_REBOOT) {
+			if (netInited == false && netIniting == false) {
+				_net.init(&_disp, &winMsg, &_cp);
+				netInited = false;
+				netIniting = true;
 
-		} else if (netInited == false && netIniting == true) {
-			if(_net.checkWiFi() == true) {
-				netInited = true;
-				netIniting = false;
+			} else if (netInited == false && netIniting == true) {
+				if(_net.checkWiFi()) {
+					netInited = true;
+					netIniting = false;
+				}
+			
+			} else if (netInited == true && netIniting == false) {
+				bool isExitFromFtp = _net.update(_forceUpdate);
+				if(isExitFromFtp) {
+					showMainMenu();
+					_net.update(true);
+				}
+				_forceUpdate = false;
 			}
-		
-		} else if (netInited == true && netIniting == false) {
-			if(_net.update(_forceUpdate)) {
-				showMainMenu();
-			}
-			_forceUpdate = false;
 		}
 
 		uint8_t st = kbd.refresh();
@@ -372,7 +377,8 @@ void Scene::checkSD() {
 			//////////////////////////////////////////////////
 			// atariSio.mountImageD1("/autorun.xex");
 			//////////////////////////////////////////////////
-			showMainMenu();
+			// showMainMenu();
+			loadConfig();
 		}
 	} else {
 		showNoSD();
@@ -490,7 +496,6 @@ void Scene::showSelect(String devName) {
 		file = root.openNextFile();
 		while(file) {
 			String fileName = String(file.name());
-			// fileName = fileName.substring(startCut, fileName.length());
 			if(file.isDirectory()){
 				mList[dirIdx].mIcon = iconDir;
 				mList[dirIdx].mType = MTYPE_DIR;
@@ -753,4 +758,15 @@ void Scene::showPlayCas(String casName) {
 	backScene = SCENE_MAINMENU;
 	currentScene = SCENE_PLAY_CAS;
 	_forceUpdate = true;
+}
+
+void Scene::loadConfig() {
+	if (!_cp.init("/astarta.cfg")) {
+		_disp.clearScreen();
+		winMsg.show(_disp, MSG_TYPE_STOP, "STOP!", "Config file is't available,\ndamaged, or has not\nthe correct format.");
+		currentScene = SCENE_REBOOT;
+
+	} else {
+		showMainMenu();
+	}
 }
