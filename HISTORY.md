@@ -1,3 +1,7 @@
+## 2.44 pre-alpha (2025-06-02)
+
+* +a lot of fixes + support ATX a bit
+
 ## 2.00 pre-alpha (2023-01-04)
 
 * +support astarta.cfg

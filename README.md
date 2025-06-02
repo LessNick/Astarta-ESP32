@@ -130,4 +130,4 @@ Next, turn on Atari with the "Select" and "Option" keys held down, press the "Re
 
 # License
 
-Source Copyright © 2022, 2023 Breeze\Fishbone and contributors. Distributed under the BSD License. See the file LICENCE.
+Source Copyright © 2022, 2025 Breeze\Fishbone and contributors. Distributed under the BSD License. See the file LICENCE.

@@ -130,4 +130,4 @@ ftpPass=password
 
 # License
 
-Source Copyright © 2022, 2023 Breeze\Fishbone and contributors. Distributed under the BSD License. See the file LICENCE.
+Source Copyright © 2022, 2025 Breeze\Fishbone and contributors. Distributed under the BSD License. See the file LICENCE.
