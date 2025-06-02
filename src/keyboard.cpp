@@ -19,10 +19,20 @@ uint8_t KeyBoard::refresh() {
 		if (_btnPressedEsc && (millis() - _tsEsc > DEBOUNCE_DELAY)) {
 			_btnPressedEsc = false;
 			st = KEY_ESC;
+
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+			LOG.println("Key ESC released!");
+#endif
+
 		}
 	}
 	
 	if (digitalRead(BTN_PIN_UP) == LOW) {
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+		if (_btnPressedUp != true) {
+			LOG.println("Key UP pressed!");
+		}
+#endif
 		_btnPressedUp = true;
 		_tsUp = millis();
 	} else {
@@ -32,13 +42,24 @@ uint8_t KeyBoard::refresh() {
 				st = KEY_ACTION_1;
 				_btnPressedEnter = false;
 				_tsEnter = millis();
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+				LOG.println("Key ACTION_1 released!");
+#endif
 			} else {
 				st = KEY_UP;
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+				LOG.println("Key UP released!");
+#endif
 			}
 		}
 	}
 	
 	if (digitalRead(BTN_PIN_DOWN) == LOW) {
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+		if (_btnPressedDown != true) {
+			LOG.println("Key DOWN pressed!");
+		}
+#endif
 		_btnPressedDown = true;
 		_tsDown = millis();
 	} else {
@@ -50,17 +71,40 @@ uint8_t KeyBoard::refresh() {
 				_tsEnter = millis();
 			} else {
 				st = KEY_DOWN;
+
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+				LOG.println("Key DOWN released!");
+#endif
+
 			}
 		}
 	}
 	
 	if (digitalRead(BTN_PIN_ENTER) == LOW) {
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+		if (_btnPressedEnter != true) {
+			LOG.println("Key ENTER pressed!");
+		}
+#endif
 		_btnPressedEnter = true;
 		_tsEnter = millis();
 	} else {
 		if (_btnPressedEnter && (millis() - _tsEnter > DEBOUNCE_DELAY)) {
 			_btnPressedEnter = false;
-			st = KEY_ENTER;
+			if (_btnPressedUp == true) {
+				st = KEY_ACTION_1;
+				_btnPressedUp = false;
+				_tsEnter = millis();
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+				LOG.println("Key ACTION_1 released!");
+#endif
+			} else {
+			  st = KEY_ENTER;
+
+#if defined(DEBUG) && defined(DEBUG_BTNS)
+			LOG.println("Key ENTER released!");
+#endif
+			}
 		}
 	}
 

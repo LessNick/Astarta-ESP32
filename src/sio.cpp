@@ -8,10 +8,24 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 SIO::SIO() {}
 
-void SIO::init(DispST7735 *disp, Net *n) {
-
+#ifdef ENABLE_WIFI
+void SIO::init(DispST7735 *disp, Net *n, uint16_t mColorNum, uint16_t mColorBg, uint16_t mColorSecR, uint16_t mColorSecW, uint16_t mColorSecS, uint16_t mColorSecF, uint16_t mColorDP, uint16_t mColorCI, uint16_t mColorCD, uint16_t mColorNR, uint16_t mColorD) {
 	_disp = disp;
 	_n = n;
+
+	_mColorNum = mColorNum;
+	_mColorBg = mColorBg;
+
+	_mColorBg = mColorBg;
+	_mColorSecR = mColorSecR;
+	_mColorSecW = mColorSecW;
+	_mColorSecS = mColorSecS;
+	_mColorSecF = mColorSecF;
+	_mColorDP = mColorDP;
+	_mColorCI = mColorCI;
+	_mColorCD = mColorCD;
+	_mColorNR = mColorNR;
+	_mColorD = mColorD;
 
 	// Инициализация виртуального дисковода D1
 	vd1.init(DEV_D1);
@@ -44,6 +58,66 @@ void SIO::init(DispST7735 *disp, Net *n) {
 	_lastStatusMsg = "";
 }
 
+#else
+
+void SIO::init(DispST7735 *disp, uint16_t mColorNum, uint16_t mColorBg, uint16_t mColorSecR, uint16_t mColorSecW, uint16_t mColorSecS, uint16_t mColorSecF, uint16_t mColorDP, uint16_t mColorCI, uint16_t mColorCD, uint16_t mColorNR, uint16_t mColorD) {
+
+	_disp = disp;
+
+	_mColorNum = mColorNum;
+	_mColorBg = mColorBg;
+
+	_mColorBg = mColorBg;
+	_mColorSecR = mColorSecR;
+	_mColorSecW = mColorSecW;
+	_mColorSecS = mColorSecS;
+	_mColorSecF = mColorSecF;
+	_mColorDP = mColorDP;
+	_mColorCI = mColorCI;
+	_mColorCD = mColorCD;
+	_mColorNR = mColorNR;
+	_mColorD = mColorD;
+
+	// Инициализация виртуального дисковода D1
+	vd1.init(DEV_D1);
+	// Инициализация виртуального дисковода D2
+	vd2.init(DEV_D2);
+	// Инициализация виртуального дисковода D3
+	vd3.init(DEV_D3);
+	// Инициализация виртуального дисковода D4
+	vd4.init(DEV_D4);
+
+	// Установить пин Atari Cmd на вход (приём данных)
+	pinMode(ATARI_CMD_PIN, INPUT);
+
+	// Начальная инициализация SIO
+	// Нельзя на данном этапе вызывать changeState, не готова консоль
+	m_sioState = SIO_READY;
+
+	// Инициализация контрольной сумма буфера
+	m_cmdBufferCrc = 0;
+
+	// Инициализация времени последнего попринятого байта
+	m_timeReceivedByte = 0;
+
+	// Инициализация сектора
+	m_dataBuffer[0] = 0;
+	m_dataBufferPtr = m_dataBuffer;
+
+	_isDataSending = false;
+
+	_lastStatusMsg = "";
+}
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void SIO::setSize(uint8_t w, uint8_t h) {
+	_width  = w;
+	_height = h;
+
+	_xPos = (w - 128) / 2;
+	_yPos = (h - 128) / 2;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 bool SIO::isBusy() {
@@ -104,6 +178,9 @@ byte SIO::getFileType(String pFileName) {
 
 		} else if (fileExt == "XEX") {
 			type = IMG_TYPE_XEX;
+
+    } else if (fileExt == "ATX") {
+			type = IMG_TYPE_ATX;
 
 		}
 	}
@@ -248,8 +325,10 @@ void SIO::checkReadCmdComplete() {
 			if ((m_cmdBuffer.devId >= DEV_D1 && m_cmdBuffer.devId <= DEV_DO) || (m_cmdBuffer.devId == DEV_BUS))  {
 				cmdProcessing();
 
+#ifdef ENABLE_WIFI
 			} else if (m_cmdBuffer.devId == DEV_RTC && _n->isTimeInited()) {
 				rCmdProcessing();
+#endif
 			}
 
 		} else {
@@ -316,10 +395,6 @@ byte SIO::calcCrc(byte* chunk, int len) {
 void SIO::cmdProcessing() {
 	switch (m_cmdBuffer.cmdId) {
 		case SIO_CMD_READ_SECTOR: {
-#ifdef DEBUG
-			LOG.println("---------------------- SIO_CMD_READ_SECTOR ----------------------");
-#endif
-			drawStatus("RS", COLOR(0,255,0));
 			sendDevSector();
 			break;
 		}
@@ -327,7 +402,7 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_WRITE_SECTOR_WITH_VERIFY ----------------------");
 #endif
-			drawStatus("WF", COLOR(255,0,0));
+			drawStatus("WF", _mColorSecW);
 			recieveDevSector();
 			break;
 		}
@@ -335,7 +410,7 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_WRITE_SECTOR ----------------------");
 #endif
-			drawStatus("WS", COLOR(255,0,0));
+			drawStatus("WS", _mColorSecW);
 			recieveDevSector();
 			break;
 		}
@@ -343,7 +418,7 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_GET_STATUS ----------------------");
 #endif
-			drawStatus("GS", COLOR(255,175,0));
+			drawStatus("GS", _mColorSecS);
 			sendDevStatus();
 			break;
 		}
@@ -351,23 +426,26 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_FORMAT_DRIVE ----------------------");
 #endif
-			drawStatus("FD", COLOR(255,0,0));
-			//TODO:
+			drawStatus("FD", _mColorSecF);
+			formatDev();
 			break;
 		}
 		case SIO_CMD_FORMAT_MEDIUM_DENSITY: {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_FORMAT_MEDIUM_DENSITY ----------------------");
 #endif
-			drawStatus("FM", COLOR(255,0,0));
-			//TODO: 
+			drawStatus("FM", _mColorSecF);
+			//TODO:
+#ifdef DEBUG
+			LOG.println("!!! FORMAT DRIVE NOT IMPLEMENTED YET !!! ");
+#endif
 			break;
 		}
 		case SIO_CMD_DEVPOOL: {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_DEVPOOL ----------------------");
 #endif
-			drawStatus("DP", COLOR(192,0,255));
+			drawStatus("DP", _mColorDP);
 			sendDevPool();
 			break;
 		}
@@ -375,7 +453,7 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_CHUNK_INFO ----------------------");
 #endif
-			drawStatus("CI", COLOR(0,255,255));
+			drawStatus("CI", _mColorCI);
 			sendDevChunkInfo();
 			break;
 		}
@@ -383,7 +461,7 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_CHUNK_DATA ----------------------");
 #endif
-			drawStatus("CD", COLOR(0,255,0));
+			drawStatus("CD", _mColorCD);
 			sendDevChunkData();
 			break;
 		}
@@ -391,12 +469,12 @@ void SIO::cmdProcessing() {
 #ifdef DEBUG
 			LOG.println("---------------------- SIO_CMD_NOTIFY_RUN ----------------------");
 #endif
-			drawStatus("NR", COLOR(0,175,255));
+			drawStatus("NR", _mColorNR);
 			sendNotifyRun();
 			break;
 		}
 		default: {
-			drawStatus("  ", COLOR(0,155,255));
+			drawStatus("oO", _mColorD);
 			break;
 		}
 	} 
@@ -405,18 +483,28 @@ void SIO::cmdProcessing() {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::rCmdProcessing() {
 	switch (m_cmdBuffer.cmdId) {
+#ifdef ENABLE_WIFI
 		case APE_GET_TIMEDATE: {
 			sendApeDateTime();
 			break;
 		}
 		case APE_SUBMIT_URL: {
 			//TODO:
+#ifdef DEBUG
+			LOG.println("!!! APE SUBMIT URL NOT IMPLEMENTED YET !!! ");
+#endif
+			break;
+		}
+#endif
+		default: {
 			break;
 		}
 	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef ENABLE_WIFI
+
 void SIO::sendApeDateTime() {
 
 #ifdef DEBUG
@@ -434,28 +522,34 @@ void SIO::sendApeDateTime() {
 	// !!! Обязательно !!!
 	ATARI_SIO.flush();
 }
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void SIO::formatDev() {
+	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+	byte mt = workDrive->getMountedImgType();
+	
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
+#ifdef DEBUG
+		LOG.println("!!! FORMAT DRIVE NOT IMPLEMENTED YET !!! ");
+#endif
+	}
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendDevStatus() {
-
 	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
 	byte mt = workDrive->getMountedImgType();
 
-#ifdef DEBUG
-	LOG.print("Dev ID: 0x");
-	LOG.println(m_cmdBuffer.devId, HEX);
-	LOG.print("Mount type: 0x");
-	LOG.println(mt, HEX);
-#endif
 	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
-	if (
-		mt == IMG_TYPE_ATR ||
-		mt == IMG_TYPE_XFD ||
-		mt == IMG_TYPE_PRO ||
-		mt == IMG_TYPE_XEX
-	) {
-
+	if ( mt != IMG_TYPE_NONE ) {
 #ifdef DEBUG
+		LOG.print("Dev ID: 0x");
+		LOG.println(m_cmdBuffer.devId, HEX);
+		LOG.print("Mount type: 0x");
+		LOG.println(mt, HEX);
+
 		LOG.print("<Send ACK: $");
 		LOG.println(SEND_ACK, HEX);
 #endif
@@ -492,75 +586,86 @@ void SIO::sendDevStatus() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendDevSector() {
-	_isDataSending = true;
+	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+	byte mt = workDrive->getMountedImgType();
+
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
+   		_isDataSending = true;
+
+		m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
 
 #ifdef DEBUG
-	LOG.print("<Send ACK: $");
-	LOG.println(SEND_ACK, HEX);
+		LOG.println("---------------------- SIO_CMD_READ_SECTOR " + String(m_currentSector) + "----------------------");
+		LOG.print("<Send ACK: $");
+		LOG.println(SEND_ACK, HEX);
 #endif
 
-	// Данные получены
-	delay(DELAY_ACK);
-	ATARI_SIO.write(SEND_ACK);
+		// Данные получены
+		delay(DELAY_ACK);
+		ATARI_SIO.write(SEND_ACK);
 
-	m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
+		// Первые 3 сектора не зависимо от размеров всего 128б это бут область!
+		m_currentSectorSize = 128;
+		if (m_currentSector > 3) {
+			m_currentSectorSize = workDrive->getSectorSize();
+		}
 
-	// Обновление индикации
-	drawPos(m_currentSector);
+		// Обновление индикации
+		drawStatus("RS", _mColorSecR);
+		drawPos(m_currentSector);
+    
+		byte* sectorData = workDrive->getSectorData(m_currentSector);
 
-	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+		if (workDrive->getMountedImgType() == IMG_TYPE_PRO || workDrive->getMountedImgType() == IMG_TYPE_ATX) {
 
-	// Первые 3 сектора не зависимо от размеров всего 128б это бут область!
-	m_currentSectorSize = 128;
-	if (m_currentSector > 3) {
-		m_currentSectorSize = workDrive->getSectorSize();
-	}
-
-	byte* sectorData = workDrive->getSectorData(m_currentSector);
-
-	if (workDrive->getMountedImgType() == IMG_TYPE_PRO) {
-
-		StatusFrame* sf = workDrive->getStatusFrame();   
-		if (sf->ctrlStatus.crcError == 0 || sf->ctrlStatus.recordNotFound == 0) {	// 0xF7 или 0xEF
-			// «Симуляция» ошибки чтения диска
-			sendBytes(m_currentSectorSize, sectorData, true);
+			StatusFrame* sf = workDrive->getStatusFrame();   
+			if (sf->ctrlStatus.crcError == 0 || sf->ctrlStatus.recordNotFound == 0) {	// 0xF7 или 0xEF
+				// «Симуляция» ошибки чтения диска
+				sendBytes(m_currentSectorSize, sectorData, true);
+			} else {
+				sendBytes(m_currentSectorSize, sectorData, false);
+			}
 		} else {
 			sendBytes(m_currentSectorSize, sectorData, false);
 		}
-	} else {
-		sendBytes(m_currentSectorSize, sectorData, false);
+
+		_isDataSending = false;
 	}
-
-	_isDataSending = false;
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::recieveDevSector() {
+	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+	byte mt = workDrive->getMountedImgType();
+
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
 
 #ifdef DEBUG
-	LOG.print("<Send ACK: $");
-	LOG.println(SEND_ACK, HEX);
+		LOG.print("<Send ACK: $");
+		LOG.println(SEND_ACK, HEX);
 #endif
 
-	// Данные получены
-	delay(DELAY_ACK);
-	ATARI_SIO.write(SEND_ACK);
+		// Данные получены
+		delay(DELAY_ACK);
+		ATARI_SIO.write(SEND_ACK);
 
-	m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
+		m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
 
-	// Обновление индикации
-	drawPos(m_currentSector);
+		// Обновление индикации
+		drawPos(m_currentSector);
 
 #ifdef DEBUG
-	LOG.print("Current Sector:");
-	LOG.println(m_currentSector);
+		LOG.print("Current Sector:");
+		LOG.println(m_currentSector);
 #endif
 
-	memset(m_dataBuffer, 0x00, sizeof(m_dataBuffer));
-	m_dataBufferPtr = m_dataBuffer;
-	
-	changeState(SIO_READ_DATA);
+		memset(m_dataBuffer, 0x00, sizeof(m_dataBuffer));
+		m_dataBufferPtr = m_dataBuffer;
+
+		changeState(SIO_READ_DATA);
+	}
 
 }
 
@@ -620,17 +725,23 @@ void SIO::drawPos(unsigned short pos) {
 	if (pos < 10) {
 		sPos = "0" + sPos;
 	}
-	_disp->setBgColor(MENU_BOTTOM_COLOR);
-	_disp->drawFont6String(128-2-(4*6), 120, sPos, COLOR(255,255,255));
+	_disp->setBgColor(_mColorBg);
+	_disp->drawFont6String(_width -2-(4*6), 120, sPos, _mColorNum);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::drawStatus(String msg, uint16_t color) {
+	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+	byte mt = workDrive->getMountedImgType();
 
-	if (_lastStatusMsg != msg) {
-		_lastStatusMsg = msg;
-		_disp->setBgColor(MENU_BOTTOM_COLOR);
-		_disp->drawFont6String(128-2-(6*6)-3, 120, msg, color);
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
+		if (_lastStatusMsg != msg) {
+			_lastStatusMsg = msg;
+			_disp->setBgColor(_mColorBg);
+			_disp->drawFont6String(_width -2-(6*6)-3, 120, msg, color);
+
+		}
 	}
 }
 
@@ -664,100 +775,115 @@ void SIO::sendDevPool() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendDevChunkInfo() {
-
-	_isDataSending = true;
-
-#ifdef DEBUG
-	LOG.print("<Send ACK: $");
-	LOG.println(SEND_ACK, HEX);
-#endif
-
-	// Данные получены
-	delay(DELAY_ACK);
-	ATARI_SIO.write(SEND_ACK);
-
-	unsigned short m_currentChunk = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
-
-#ifdef DEBUG
-	LOG.print("Get chunk info for:" );
-	LOG.println(m_currentChunk);
-#endif
-
 	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
-	
-	Diskette d = workDrive->getRecordInfo(m_currentChunk);
-	unsigned int recCount = workDrive->getDiskRecCount();	// Количество чанков всего
+	byte mt = workDrive->getMountedImgType();
+
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
+		_isDataSending = true;
 
 #ifdef DEBUG
-	LOG.print("Chunk count=");
-	LOG.println(recCount);
+		LOG.print("<Send ACK: $");
+		LOG.println(SEND_ACK, HEX);
 #endif
 
-	byte chunkInfo[6];
-	chunkInfo[0] = d.loadAddr % 256;					// +0x00: 2 байта: Адрес загрузки чанка
-	chunkInfo[1] = d.loadAddr / 256;					// +0x02: 1 байт: Всегда 1 (нафига?)
-	chunkInfo[2] = 1;
-	chunkInfo[3] = (recCount != m_currentChunk + 1);	// +0x03: 1 байт: Если последний блок (чанк) из передаваемых, то 0
-														//					В противном случае всегда 1. Нужно для игнора RUN-блоков,
-														//					которые грузятся в адреса 0x02e0+
-	chunkInfo[4] = d.loadSize % 256;					// +0x04: 2 байта: Размер загружаемого чанка
-	chunkInfo[5] = d.loadSize / 256;
-	
-	byte frameLength = sizeof(chunkInfo);
-	byte crc = calcCrc((byte*)&chunkInfo, frameLength);
+		// Данные получены
+		delay(DELAY_ACK);
+		ATARI_SIO.write(SEND_ACK);
 
-	// Приём завершён
-	delay(DELAY_COMPLETE);
-	ATARI_SIO.write(SEND_COMPLETE);
+		unsigned short m_currentChunk = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
 
-	byte* b = (byte*)&chunkInfo;
-	for (int i=0; i < frameLength; i++) {
-		ATARI_SIO.write(*b);
-		b++;
+#ifdef DEBUG
+		LOG.print("Get chunk info for:" );
+		LOG.println(m_currentChunk);
+#endif
+
+		vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+    
+		Diskette d = workDrive->getRecordInfo(m_currentChunk);
+		unsigned int recCount = workDrive->getDiskRecCount();	// Количество чанков всего
+
+#ifdef DEBUG
+		LOG.print("Chunk count=");
+		LOG.println(recCount);
+#endif
+
+		byte chunkInfo[6];
+		chunkInfo[0] = d.loadAddr % 256;			// +0x00: 2 байта: Адрес загрузки чанка
+		chunkInfo[1] = d.loadAddr / 256;			// +0x02: 1 байт: Всегда 1 (нафига?)
+		chunkInfo[2] = 1;
+		chunkInfo[3] = (recCount != m_currentChunk + 1);	// +0x03: 1 байт: Если последний блок (чанк) из передаваемых, то 0
+									//		  В противном случае всегда 1. Нужно для игнора RUN-блоков,
+									//		  которые грузятся в адреса 0x02e0+
+		chunkInfo[4] = d.loadSize % 256;			// +0x04: 2 байта: Размер загружаемого чанка
+		chunkInfo[5] = d.loadSize / 256;
+    
+		byte frameLength = sizeof(chunkInfo);
+		byte crc = calcCrc((byte*)&chunkInfo, frameLength);
+
+		// Приём завершён
+		delay(DELAY_COMPLETE);
+		ATARI_SIO.write(SEND_COMPLETE);
+
+		byte* b = (byte*)&chunkInfo;
+		for (int i=0; i < frameLength; i++) {
+			ATARI_SIO.write(*b);
+			b++;
+		}
+		ATARI_SIO.write(crc);
+
+		// !!! Обязательно !!!
+		ATARI_SIO.flush();
+
+		_isDataSending = false;
 	}
-	ATARI_SIO.write(crc);
-
-	// !!! Обязательно !!!
-	ATARI_SIO.flush();
-
-	_isDataSending = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendDevChunkData() {
-	_isDataSending = true;
-
-#ifdef DEBUG
-	LOG.print("<Send ACK: $");
-	LOG.println(SEND_ACK, HEX);
-#endif
-
-	// Данные получены
-	delay(DELAY_ACK);
-	ATARI_SIO.write(SEND_ACK);
-	
-	unsigned short m_currentChunk = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
-	// Обновление индикации
-	drawPos(m_currentChunk);
-
-
-#ifdef DEBUG
-	LOG.print("Get chunk data for:" );
-	LOG.println(m_currentChunk);
-#endif
-
 	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
-	Diskette d = workDrive->getRecordInfo(m_currentChunk);
+	byte mt = workDrive->getMountedImgType();
 
-	byte* chunkData = workDrive->getRecordData(m_currentChunk);
-	sendBytes(d.loadSize, chunkData, false);
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
+		_isDataSending = true;
 
-	_isDataSending = false;
+#ifdef DEBUG
+		LOG.print("<Send ACK: $");
+		LOG.println(SEND_ACK, HEX);
+#endif
 
+		// Данные получены
+		delay(DELAY_ACK);
+		ATARI_SIO.write(SEND_ACK);
+
+		unsigned short m_currentChunk = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
+		// Обновление индикации
+		drawPos(m_currentChunk);
+
+
+#ifdef DEBUG
+		LOG.print("Get chunk data for:" );
+		LOG.println(m_currentChunk);
+#endif
+
+		vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+		Diskette d = workDrive->getRecordInfo(m_currentChunk);
+
+		byte* chunkData = workDrive->getRecordData(m_currentChunk);
+		sendBytes(d.loadSize, chunkData, false);
+
+		_isDataSending = false;
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendNotifyRun() {
+	vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+	byte mt = workDrive->getMountedImgType();
+
+	// Если тип примонтированного образа не поддерживается, то молчать и не выдавать своё присутствие
+	if ( mt != IMG_TYPE_NONE ) {
 
 #ifdef DEBUG
 	LOG.print("<Send ACK: $");
@@ -775,99 +901,140 @@ void SIO::sendNotifyRun() {
 	// Приём завершён
 	delay(DELAY_COMPLETE);
 	ATARI_SIO.write(SEND_COMPLETE);
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void SIO::mountImageD1(String filePath) {
+void SIO::unMountImageD1() {
+#ifdef DEBUG
+	LOG.println("UnMount Drive 1");
+#endif
+	vd1.unMount();
+}
+
+void SIO::unMountImageD2() {
+#ifdef DEBUG
+	LOG.println("UnMount Drive 2");
+#endif
+	vd2.unMount();
+}
+
+void SIO::unMountImageD3() {
+#ifdef DEBUG
+	LOG.println("UnMount Drive 3");
+#endif
+	vd3.unMount();
+}
+
+void SIO::unMountImageD4() {
+#ifdef DEBUG
+	LOG.println("UnMount Drive 4");
+#endif
+	vd4.unMount();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+bool SIO::mountImageD1(String filePath) {
 	byte fileType = getFileType(filePath);
+	bool isMounted = false;
 	if (fileType == IMG_TYPE_XEX) {
-		vd1.mountXex(filePath);
+		isMounted = vd1.mountXex(filePath);
 	
 	} else if (
 		fileType == IMG_TYPE_ATR ||
 		fileType == IMG_TYPE_DCM ||
 		fileType == IMG_TYPE_PRO ||
 		fileType == IMG_TYPE_SCP ||
-		fileType == IMG_TYPE_XFD
+		fileType == IMG_TYPE_XFD ||
+		fileType == IMG_TYPE_ATX
 	) {
-		vd1.mountImage(filePath, fileType);
+		isMounted = vd1.mountImage(filePath, fileType);
 	} else {
 		//TODO: ERR WIN!
 
 #ifdef DEBUG
-		LOG.println("Unsupported type: " + String(fileType));
+		LOG.println("!!! Error! Unsupported image type !!!");
 #endif
 	}
+
+	return isMounted;
 }
 
-void SIO::mountImageD2(String filePath) {
+bool SIO::mountImageD2(String filePath) {
 	byte fileType = getFileType(filePath);
+	bool isMounted = false;
 	if (fileType == IMG_TYPE_XEX) {
-		vd2.mountXex(filePath);
+		isMounted = vd2.mountXex(filePath);
 
 	} else if (
 		fileType == IMG_TYPE_ATR ||
 		fileType == IMG_TYPE_DCM ||
 		fileType == IMG_TYPE_PRO ||
 		fileType == IMG_TYPE_SCP ||
-		fileType == IMG_TYPE_XFD
+		fileType == IMG_TYPE_XFD ||
+		fileType == IMG_TYPE_ATX
 	) {
-		vd2.mountImage(filePath, getFileType(filePath));
+		isMounted = vd2.mountImage(filePath, getFileType(filePath));
 
 	} else {
 		//TODO: ERR WIN!
 
 #ifdef DEBUG
-		LOG.println("Unsupported type: " + String(fileType));
+		LOG.println("!!! Error! Unsupported image type !!!");
 #endif
 	}
-
+	return isMounted;
 }
 
-void SIO::mountImageD3(String filePath) {
+bool SIO::mountImageD3(String filePath) {
 	byte fileType = getFileType(filePath);
+	bool isMounted = false;
 	if (fileType == IMG_TYPE_XEX) {
-		vd3.mountXex(filePath);
+		isMounted = vd3.mountXex(filePath);
 
 	} else if (
 		fileType == IMG_TYPE_ATR ||
 		fileType == IMG_TYPE_DCM ||
 		fileType == IMG_TYPE_PRO ||
 		fileType == IMG_TYPE_SCP ||
-		fileType == IMG_TYPE_XFD
+		fileType == IMG_TYPE_XFD ||
+		fileType == IMG_TYPE_ATX
 	) {
-		vd3.mountImage(filePath, getFileType(filePath));
+		isMounted = vd3.mountImage(filePath, getFileType(filePath));
 
 	} else {
 		//TODO: ERR WIN!
 
 #ifdef DEBUG
-		LOG.println("Unsupported type: " + String(fileType));
+		LOG.println("!!! Error! Unsupported image type !!!");
 #endif
-	}
 
+	}
+	return isMounted;
 }
 
-void SIO::mountImageD4(String filePath) {
+bool SIO::mountImageD4(String filePath) {
 	byte fileType = getFileType(filePath);
+	bool isMounted = false;
 	if (fileType == IMG_TYPE_XEX) {
-		vd4.mountXex(filePath);
+		isMounted = vd4.mountXex(filePath);
 
 	} else if (
 		fileType == IMG_TYPE_ATR ||
 		fileType == IMG_TYPE_DCM ||
 		fileType == IMG_TYPE_PRO ||
 		fileType == IMG_TYPE_SCP ||
-		fileType == IMG_TYPE_XFD
+		fileType == IMG_TYPE_XFD ||
+		fileType == IMG_TYPE_ATX
 	) {
-		vd4.mountImage(filePath, getFileType(filePath));
+		isMounted = vd4.mountImage(filePath, getFileType(filePath));
 
 	} else {
 		//TODO: ERR WIN!
 
 #ifdef DEBUG
-		LOG.println("Unsupported type: " + String(fileType));
+		LOG.println("!!! Error! Unsupported image type !!!");
 #endif
 	}
-
+	return isMounted;
 }

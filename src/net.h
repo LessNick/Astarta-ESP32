@@ -11,7 +11,12 @@
 #include <SD.h>
 
 #include "message.h"
-#include "iconsRSSI.h"
+
+// #ifdef FLIP_RGB_BGR
+// #include "iconsRSSI_bgr.h"
+// #else
+#include "iconsRSSI_rgb.h"
+// #endif
 
 #include "configParser.h"
 
@@ -44,7 +49,8 @@ const byte RSSI_UNUSABLE	= 0x05;	// -90 dBm = Unusable - Approaching or drowning
 class Net {
 	public:
 		Net();
-		void 				init(DispST7735 *disp, Message *winMsg, ConfigParser *cp);
+    void  setSize(uint8_t w, uint8_t h);
+		void 				init(DispST7735 *disp, Message *winMsg, ConfigParser *cp, uint16_t mColor, uint16_t mColorBg);
 		bool				checkWiFi();
 		bool				update(bool force);
 		NetDateTime*		getDateTime();
@@ -53,6 +59,8 @@ class Net {
 		void 				tPrint(String str);
 
 	private:
+    uint8_t   _width;
+		uint8_t   _height;
 		DispST7735			*_disp;
 		Message				*_winMsg;
 
@@ -97,6 +105,12 @@ class Net {
 		uint8_t				tryCount;
 
 		bool				timeInited;
+
+    uint8_t _xPos;
+    uint8_t _yPos;
+
+    uint16_t _mColor;
+    uint16_t _mColorBg;
 
 };
 

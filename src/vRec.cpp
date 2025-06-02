@@ -8,6 +8,20 @@
 
 vRecorder::vRecorder() {};
 
+void vRecorder::init(KeyBoard *kbd, uint16_t mSceneBg, uint16_t mWinFg) {
+	_kbd = kbd;
+	_mSceneBg = mSceneBg;
+	_mWinFg = mWinFg;
+}
+
+void vRecorder::setSize(uint8_t w, uint8_t h) {
+	_width  = w;
+	_height = h;
+
+	_xPos = (w - 128) / 2;
+	_yPos = (h - 128) / 2;
+}
+
 void vRecorder::startPlay(DispST7735 &_disp, String filePath) {
 
 	String sp = "     ";
@@ -26,12 +40,22 @@ void vRecorder::startPlay(DispST7735 &_disp, String filePath) {
 		
 		unsigned int nAddr = 0;
 
+		isComplete = false;
+		isAborted = false;
+
 		byte tData[8];
 		while (nAddr < m_imageSize) {
+			if (_kbd->refresh() != KEY_NONE) {
+				isAborted = true;
+#ifdef DEBUG
+				LOG.print("Cassette play aborted!");
+#endif
+        			break;
+			}
 
 			char cName[4+1];		// Название блока
-			unsigned short  cSize;	// Размер блока
-			unsigned short  cAux;	// Доп. данные
+			unsigned short  cSize;		// Размер блока
+			unsigned short  cAux;		// Доп. данные
 
 			imageFile.seek(nAddr);
 			imageFile.read(tData, 8);
@@ -67,7 +91,7 @@ void vRecorder::startPlay(DispST7735 &_disp, String filePath) {
 				LOG.print("Change port speed to: ");
 				LOG.println(cAux);
 #endif
-				_disp.drawFontCenter8P(3, 51+(1*9), 128-6, sp + "Port Speed: " + String(cAux) + sp, COLOR(0,0,0));
+				_disp.drawFontCenter8P(_xPos + 3, _yPos + 51+(1*9), 128-6, sp + "Port Speed: " + String(cAux) + sp, _mWinFg);
 				ATARI_SIO.begin(cAux);
 
 			} else if(strcmp(cName, "data") == 0) {
@@ -75,26 +99,33 @@ void vRecorder::startPlay(DispST7735 &_disp, String filePath) {
 #ifdef DEBUG
 				LOG.print("Wait (GAP, ms): ");
 				LOG.println(cAux);
-	#endif
+#endif
 
 				if (cAux > 1000) {
-					_disp.drawFontCenter8P(3, 51+(2*9), 128-6, sp + "Wait (GAP, ms): " + String(cAux) + sp, COLOR(0,0,0));
+					_disp.drawFontCenter8P(_xPos + 3,  _yPos + 51+(2*9), 128-6, sp + "Wait (GAP, ms): " + String(cAux) + sp, _mWinFg);
 					
-					int gapCount = cAux/1000;
+					int gapCount = cAux / 1000;
 					for (int gc=0; gc<gapCount; gc++) {
-						_disp.drawFontCenter8P(3, 51+(3*9), 128-6, sp + String(gc) + " / " + String(gapCount) + sp, COLOR(0,0,0));
+						if (_kbd->refresh() != KEY_NONE) {
+							isAborted = true;
+#ifdef DEBUG
+							LOG.print("Cassette play aborted!");
+#endif
+							break;
+						}
+						_disp.drawFontCenter8P(_xPos + 3,  _yPos + 51+(3*9), 128-6, sp + String(gc) + " / " + String(gapCount) + sp, _mWinFg);
 						delay(1000);
 					}
-					if (cAux > gapCount*1000) {
-						delay(cAux-gapCount*1000);
-					}
+					if (isAborted == true) break;
+
+					if (cAux > gapCount * 1000) delay(cAux-gapCount * 1000);
 				
 				} else {
 					delay(cAux);
 				}
-		
-				_disp.drawFontCenter8P(3, 51+(2*9), 128-6, sp + "  Loading data:  " + sp, COLOR(0,0,0));
-				_disp.drawFontCenter8P(3, 51+(3*9), 128-6, sp + String(nAddr) + " / " + String(m_imageSize) + sp, COLOR(0,0,0));
+
+				_disp.drawFontCenter8P(_xPos + 3, _yPos + 51+(2*9), 128-6, sp + "  Loading data:  " + sp, _mWinFg);
+				_disp.drawFontCenter8P(_xPos + 3, _yPos + 51+(3*9), 128-6, sp + String(nAddr) + " / " + String(m_imageSize) + sp, _mWinFg);
 
 				byte sData[cSize];
 
@@ -104,7 +135,6 @@ void vRecorder::startPlay(DispST7735 &_disp, String filePath) {
 #ifdef DEBUG
 				String sendResult = "";
 #endif
-
 				byte* b = sData;
 				for (int i=0; i < cSize; i++) {
 	
@@ -132,6 +162,12 @@ void vRecorder::startPlay(DispST7735 &_disp, String filePath) {
 
 		}
 
-		_disp.drawFontCenter8P(3, 51+(3*9), 128-6, sp + " Complete! " + sp, COLOR(0,0,0));
+		if (isAborted != true) isComplete = true;
+		
 	}
 };
+
+
+bool vRecorder::playComplete() {
+	return isComplete;
+}

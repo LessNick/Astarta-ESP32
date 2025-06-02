@@ -22,7 +22,7 @@
 #define ROTATE_LEFT_TOP		2
 #define ROTATE_RIGHT_TOP	3
 
-#define BG_COLOR			0x0000
+// #define BG_COLOR			0x0000
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Управляющие команды SPI
@@ -88,10 +88,34 @@
 #define ST7735_GMCTRN1		0xe1	// Gamma '-'Polarity Correction Characteristics Setting
 #define ST7735_GCV			0xfc	// Gate Pump Clock Frequency Variable
 
+//                          76543210
+#ifdef FLIP_RGB_BGR
+  #define ST7735_MADCTL_RGB 0b00000000
+  #define ST7735_MADCTL_BGR 0b00001000
+#else
+  #define ST7735_MADCTL_RGB 0b00001000
+  #define ST7735_MADCTL_BGR 0b00000000
+#endif
+
+#define ST7735_MADCTL_LR  0b00000100  // Left to Right
+#define ST7735_MADCTL_RL  0b00000000  // Right to Left
+#define ST7735_MADCTL_TB  0b00000000  // Top to Borttom
+#define ST7735_MADCTL_BT  0b00010000  // Bottom tp Top
+
+
+#define ST7735_COLMOD_RGB444  0b00000011
+#define ST7735_COLMOD_RGB565  0b00000101
+#define ST7735_COLMOD_RGB666  0b00000110
+
 class DispST7735 {
 	public:
 		DispST7735();
-		void			init();                                                       // Инициализация
+		void			init(uint16_t mSceneBg);                                                       // Инициализация
+    void      setSize(uint8_t w, uint8_t h);
+    uint8_t   getWidth();
+    uint8_t   getHeight();
+    void      setDispMode(uint8_t mode);
+  
 		void			setRotation(uint8_t m);
 		void			setAddrWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
 		void			drawPixel(uint8_t x, uint8_t y, uint16_t color);
@@ -116,18 +140,20 @@ class DispST7735 {
 
 		void			drawFontChar16P(uint8_t x, uint8_t y, uint8_t w, char ch, uint16_t color);
 		void			drawFontString16P(uint8_t x, uint8_t y, String str, uint16_t color);
-	
+
+		void			delayMs(uint32_t d);								// Задержка в милисекундах
+
 	private:
 		void			displayOn();
 		void			displayOff();
 
-		void			delayMs(uint32_t d);								// Задержка в милисекундах
-
 		void			sendCommand(uint8_t sCmd);							// Отправить команду дисплею
 		void			sendData(uint8_t sData);							// Отправить байт данных дисплею
-		void			sendDataPacket(uint8_t *sData, uint8_t sDataLen);
+    void			sendData16(uint16_t sData);							// Отправить 2 байта данных дисплею
+    void			sendDataPacket(void *sData, size_t sDataLen);
+		void			sendDataPacketC(const uint8_t *sData, size_t sDataLen);
 
-		unsigned short	displayMemory[DISP_HEIGHT][DISP_WIDTH];				// Память дисплея (2 байта на точку)
+		// unsigned short	displayMemory[DISP_HEIGHT][DISP_WIDTH];				// Память дисплея (2 байта на точку)
 		SPISettings		spiSettings;
 
 		SPIClass		*hspi;
@@ -137,7 +163,8 @@ class DispST7735 {
 		uint8_t			_offset_x;
 		uint8_t			_offset_y;
 
-		uint16_t		_bg_color;
+    uint16_t	  _mSceneBg;
+		uint16_t		_bgColor;
 
 		bool			_textNewLine;
 };

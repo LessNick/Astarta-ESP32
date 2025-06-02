@@ -3,15 +3,19 @@
 #include "font_8p.h"
 #include "font_16p.h"
 
+#define LORA_MISO 12
+#define LORA_MOSI 13
+#define LORA_CLK  14
+  
+#define LORA_NSS  21
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Display  ST7735 128x128 - Управление цветным дисплеем ST7735 с матрицей 128x128px
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-DispST7735::DispST7735() {
-	init();
-}
+DispST7735::DispST7735() {}
 
-void DispST7735::init() {
+void DispST7735::init(uint16_t mSceneBg) {
 	pinMode(LED_PIN,	OUTPUT);
 	pinMode(SCK_PIN,	OUTPUT);
 	pinMode(DC_PIN,		OUTPUT);
@@ -26,17 +30,21 @@ void DispST7735::init() {
 	_width  = DISP_WIDTH;
 	_height = DISP_HEIGHT;
 
-	_bg_color = BG_COLOR;
+	// _bg_color = BG_COLOR;
+  _mSceneBg = mSceneBg;
+  _bgColor = _mSceneBg;
 
 	_textNewLine = false;
 
 	hspi = new SPIClass(HSPI);
 
-	spiSettings = SPISettings(6000000, MSBFIRST, SPI_MODE0);
+//	spiSettings = SPISettings(6000000, MSBFIRST, SPI_MODE0);
+	spiSettings = SPISettings(8000000, MSBFIRST, SPI_MODE0);
 	hspi->setBitOrder(MSBFIRST);
 	hspi->setDataMode(SPI_MODE0);
 
-	hspi->begin();
+	//hspi->begin();
+  hspi->begin(SCK_PIN, -1, MOSI_PIN, -1);
 
 	digitalWrite(CS_PIN, LOW);
 
@@ -49,10 +57,10 @@ void DispST7735::init() {
 	sendCommand(ST7735_DISPON);		//включаем экран
 	
 	sendCommand(ST7735_MADCTL);		//меняем вывод цветов с GBR на RGB
-	sendData(0b00001000);
+  sendData(ST7735_MADCTL_RGB | ST7735_MADCTL_LR | ST7735_MADCTL_TB);
 	
 	sendCommand(ST7735_COLMOD);		//меняем кодировку цветопередачи на 2-байтную (64К цветов)
-	sendData(0b00000101);			// 5 = 101 - RGB565
+  sendData(ST7735_COLMOD_RGB565);
 
 	setRotation(ROTATE_LEFT_TOP);
 
@@ -60,24 +68,34 @@ void DispST7735::init() {
 	
 }
 
+void DispST7735::setSize(uint8_t w, uint8_t h) {
+  _width  = w;
+  _height = h;
+}
+
+void DispST7735::setDispMode(uint8_t mode) {
+	sendCommand(ST7735_MADCTL);
+  //sendData(mode | ST7735_MADCTL_LR | ST7735_MADCTL_TB);
+  // Не важны дополнительные настройки, так как отдельно задаётся поворот экрана
+  sendData(mode);
+
+  sendCommand(ST7735_COLMOD);
+  sendData(ST7735_COLMOD_RGB565);
+}
+
 void DispST7735::setBgColor(uint16_t color) {
-	_bg_color = color;
+	_bgColor = color;
 }
 
 void DispST7735::restoreBgColor() {
-	_bg_color = BG_COLOR;
+	// _bgColor = BG_COLOR;
+  _bgColor = _mSceneBg;
 }
-
 
 void DispST7735::drawImage(uint8_t x, uint8_t y, uint8_t w, uint8_t h, const uint8_t img[]) {
 	setAddrWindow(x, y, x+w-1, y+h-1);
 	int dataSize = w * h*2;
-	for (int i=0; i<dataSize; i +=2) {
-		uint8_t lo = img[i];
-		uint8_t hi = img[i+1];
-		sendData(hi);
-		sendData(lo);
-	}
+  sendDataPacketC(img, (size_t)dataSize);
 }
 
 void DispST7735::drawFont6String(uint8_t x, uint8_t y, String str, uint16_t color) {
@@ -148,132 +166,124 @@ void DispST7735::drawFontString8P(uint8_t x, uint8_t y, String str, uint16_t col
 void DispST7735::drawFontChar8P(uint8_t x, uint8_t y, uint8_t w, char ch, uint16_t color) {
 	setAddrWindow(x, y, x + w - 1, y + 8 - 1);
 	uint8_t fg_hi = (color >> 8) & 0xFF, fg_lo = color & 0xFF;
-	uint8_t bg_hi = (_bg_color >> 8) & 0xFF, bg_lo = _bg_color & 0xFF;
+  uint8_t bg_hi = (_bgColor >> 8) & 0xFF, bg_lo = _bgColor & 0xFF;
+  uint16_t color_fg = (fg_lo * 256 + fg_hi);
+  uint16_t color_bg = (bg_lo * 256 + bg_hi);
 
-	for (uint8_t k=0; k<8; k++) {
-		uint8_t line = font_8p[ch-32][k];
-		uint8_t b = 0b10000000;
-		for (uint8_t j=0; j<w; j++) {
-			if ((line & b) != 0) {
-				sendData(fg_hi);
-				sendData(fg_lo);
-			} else {
-				sendData(bg_hi);
-				sendData(bg_lo);
-			}
+  int sDataLen = 2 * w * 8; // 2 байтцвет * ширину * высоту
+  void *buf = malloc(sDataLen*2);
+  int count = sDataLen;
 
-			b = b >> 1;
-		}
-	}
+  uint16_t *buf_ = (uint16_t *)buf;
+  uint8_t xP=0;
+  uint8_t *line = (uint8_t *)font_8p[ch-32];
+  
+  uint8_t b = 0b10000000;
+  uint8_t bb = 0;
+  while(count--) {
+    if ((line[bb] & b) > 0) {
+      *buf_ = color_fg;
+    } else {
+      *buf_ = color_bg;
+    }
+    xP++;
+    b = b >> 1;
+    *buf_++;
+    if (xP == w) {
+      bb++;
+      b = 0b10000000;
+      xP = 0;
+    }
+  }
+  sendDataPacket(buf, sDataLen);
+  free(buf);
 }
 
 void DispST7735::drawFont6Char(uint8_t x, uint8_t y, char ch, uint16_t color) {
 	setAddrWindow(x, y, x + 5, y + 5);
-	uint8_t fg_hi = (color >> 8) & 0xFF, fg_lo = color & 0xFF;
-	uint8_t bg_hi = (_bg_color >> 8) & 0xFF, bg_lo = _bg_color & 0xFF;
-	
-	for (uint8_t k=0; k<6; k++) {
-		uint8_t line = font_6x6[ch-32][k];
 
-		if ((line & 0b10000000) != 0) {
-			sendData(fg_hi);
-			sendData(fg_lo);
-		} else {
-			sendData(bg_hi);
-			sendData(bg_lo);
-		}
-		
-		if ((line & 0b01000000) != 0) {
-			sendData(fg_hi);
-			sendData(fg_lo);
-		} else {
-			sendData(bg_hi);
-			sendData(bg_lo);
-		}
-		
-		if ((line & 0b00100000) != 0) {
-			sendData(fg_hi);
-			sendData(fg_lo);
-		} else {
-			sendData(bg_hi);
-			sendData(bg_lo);
-		}
-		
-		if ((line & 0b00010000) != 0) {
-			sendData(fg_hi);
-			sendData(fg_lo);
-		} else {
-			sendData(bg_hi);
-			sendData(bg_lo);
-		}
-		
-		if ((line & 0b00001000) != 0) {
-			sendData(fg_hi);
-			sendData(fg_lo);
-		} else {
-			sendData(bg_hi);
-			sendData(bg_lo);
-		}
+  uint8_t fg_hi = (color >> 8) & 0xFF, fg_lo = color & 0xFF;
+  uint8_t bg_hi = (_bgColor >> 8) & 0xFF, bg_lo = _bgColor & 0xFF;
+  uint16_t color_fg = (fg_lo * 256 + fg_hi);
+  uint16_t color_bg = (bg_lo * 256 + bg_hi);
 
-		if ((line & 0b00000100) != 0) {
-			sendData(fg_hi);
-			sendData(fg_lo);
-		} else {
-			sendData(bg_hi);
-			sendData(bg_lo);
-		}
-	}
+  int sDataLen = 2 * 6 * 6; // 2 байтцвет * ширину * высоту
+  void *buf = malloc(sDataLen*2);
+  int count = sDataLen;
+
+  uint16_t *buf_ = (uint16_t *)buf;
+  uint8_t xP=0;
+  uint8_t *line = (uint8_t *)font_6x6[ch-32];
+  
+  uint8_t b = 0b10000000;
+  uint8_t bb = 0;
+  while(count--) {
+    if ((line[bb] & b) > 0) {
+      *buf_ = color_fg;
+    } else {
+      *buf_ = color_bg;
+    }
+    xP++;
+    b = b >> 1;
+    *buf_++;
+    if (xP == 6) {
+      bb++;
+      b = 0b10000000;
+      xP = 0;
+    }
+  }
+  sendDataPacket(buf, sDataLen);
+  free(buf);
 }
 
 void DispST7735::drawFontChar16P(uint8_t x, uint8_t y, uint8_t w, char ch, uint16_t color) {
-	setAddrWindow(x, y, x + w - 1, y + 16 - 1);
 	uint8_t fg_hi = (color >> 8) & 0xFF, fg_lo = color & 0xFF;
-	uint8_t bg_hi = (_bg_color >> 8) & 0xFF, bg_lo = _bg_color & 0xFF;
+  uint8_t bg_hi = (_bgColor >> 8) & 0xFF, bg_lo = _bgColor & 0xFF;
+  uint16_t color_fg = (fg_lo * 256 + fg_hi);
+  uint16_t color_bg = (bg_lo * 256 + bg_hi);
+  
+  setAddrWindow(x, y, x + w - 1, y + 16 - 1);
+  int sDataLen = 2 * w * 16; // 2 байтцвет * ширину * высоту
+  
+  void *buf = malloc(sDataLen*2);
+  int count = sDataLen;
+  uint16_t *buf_ = (uint16_t *)buf;
 
-	if (w < 9) {
-		for (uint8_t k=0; k<32; k+=2) {
-			uint8_t line = font_16p[ch-32][k];
-			uint8_t b = 0b10000000;
-			for (uint8_t j=0; j<w; j++) {
-				if ((line & b) != 0) {
-					sendData(fg_hi);
-					sendData(fg_lo);
-				} else {
-					sendData(bg_hi);
-					sendData(bg_lo);
-				}
-				b = b >> 1;
-			}
-		}
-	} else {
-		for (uint8_t k=0; k<32; k++) {
-			uint8_t line = font_16p[ch-32][k];
-			uint8_t b = 0b10000000;
-			for (uint8_t j=0; j<8; j++) {
-				if ((line & b) != 0) {
-					sendData(fg_hi);
-					sendData(fg_lo);
-				} else {
-					sendData(bg_hi);
-					sendData(bg_lo);
-				}
-				b = b >> 1;
-			}
-			k++;
-			uint8_t line2 = font_16p[ch-32][k];
-			uint8_t b2 = 0b10000000;
-			for (uint8_t j=0; j<w-8; j++) {
-				if ((line2 & b2) != 0) {
-					sendData(fg_hi);
-					sendData(fg_lo);
-				} else {
-					sendData(bg_hi);
-					sendData(bg_lo);
-				}
-				b2 = b2 >> 1;
-			}
-		}
-	}
+  uint8_t xP=0;
+  uint8_t *line = (uint8_t *)font_16p[ch-32];
+  uint8_t b = 0b10000000;
+  uint8_t bb = 0;
+  while(count--) {
+    if ((line[bb] & b) > 0) {
+      *buf_ = color_fg;
+    } else {
+      *buf_ = color_bg;
+    }
+    xP++;
+    b = b >> 1;
+    *buf_++;
+    if (w > 8) {
+      if (xP == 8) {
+        bb++;
+        b = 0b10000000;
+      } else if (xP == w) {
+        bb++;
+        b = 0b10000000;
+        xP = 0;
+      }
+    } else {
+      if (xP == w) {
+        bb++;
+        bb++;
+        b = 0b10000000;
+        xP = 0;
+      }
+    }
+
+  }
+  sendDataPacket(buf, sDataLen);
+  free(buf);
+
 }
 
 void DispST7735::drawFontString16P(uint8_t x, uint8_t y, String str, uint16_t color) {
@@ -294,8 +304,6 @@ void DispST7735::drawFontString16P(uint8_t x, uint8_t y, String str, uint16_t co
 		}
 	}
 }
-
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -369,10 +377,8 @@ void DispST7735::drawRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t c
 
 void DispST7735::drawPixel(uint8_t x, uint8_t y, uint16_t color) {
 	if((x < 0) ||(x >= _width + _offset_x) || (y < 0) || (y >= _height + _offset_y)) return;
-
 	setAddrWindow(x, y, x+1, y+1);
-	sendData((color >> 8) & 0xFF);
-	sendData(color & 0xFF);
+  sendData16(color);
 }
 
 void DispST7735::displayOn() {
@@ -384,7 +390,7 @@ void DispST7735::displayOff() {
 }
 
 void DispST7735::clearScreen() {
-	fillRect(0, 0, _width, _height, _bg_color);
+	fillRect(0, 0, _width, _height, _bgColor);
 }
 
 void DispST7735::fillScreen(uint16_t color) {
@@ -393,20 +399,34 @@ void DispST7735::fillScreen(uint16_t color) {
 
 void DispST7735::fillRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t color) {
 	if((x >= _width) || (y >= _height)) return;
-	
 	if((x + w - 1) >= _width)  w = _width  - x;
 	if((y + h - 1) >= _height) h = _height - y;
 
 	setAddrWindow(x, y, x+w-1, y+h-1);
 
 	uint8_t hi = (color >> 8) & 0xFF, lo = color & 0xFF;
+  uint16_t color_r = (lo * 256 + hi);
 
-	for(y=h; y>0; y--) {
-		for(x=w; x>0; x--) {
-			sendData(hi);
-			sendData(lo);
-		}
-	}
+  int sDataLen = h * w * 2;
+  void *buf = malloc(sDataLen);
+  int count = h * w;
+  uint16_t *buf_ = (uint16_t *)buf;
+  while(count--) *buf_++ = color_r;
+
+  hspi->beginTransaction(spiSettings);
+	digitalWrite(DC_PIN, HIGH);
+	digitalWrite(CS_PIN, LOW);
+
+	digitalWrite(RES_PIN, HIGH);
+
+	hspi->transfer (buf, sDataLen);
+
+	digitalWrite(DC_PIN, HIGH);
+	digitalWrite(CS_PIN, HIGH);
+
+	hspi->endTransaction();
+
+  free(buf);
 
 }
 
@@ -448,8 +468,48 @@ void DispST7735::sendData(uint8_t sData) {
 	hspi->endTransaction();
 }
 
-void DispST7735::sendDataPacket(uint8_t *sData, uint8_t sDataLen) {
-	for(int i = 0; i < sDataLen; i++) {
-		sendData(sData[i]);
-	}
+void DispST7735::sendData16(uint16_t sData) {
+	hspi->beginTransaction(spiSettings);
+	digitalWrite(DC_PIN, HIGH);
+	digitalWrite(CS_PIN, LOW);
+
+	digitalWrite(RES_PIN, HIGH);
+
+	hspi->transfer16(sData);
+
+	digitalWrite(DC_PIN, HIGH);
+	digitalWrite(CS_PIN, HIGH);
+
+	hspi->endTransaction();
+}
+
+void DispST7735::sendDataPacketC(const uint8_t *sData, size_t sDataLen) {
+  void *buf = malloc(sDataLen);
+  memcpy(buf, sData, sDataLen);
+  sendDataPacket(buf, sDataLen);
+  free(buf);
+}
+
+void DispST7735::sendDataPacket(void *sData, size_t sDataLen) {
+  hspi->beginTransaction(spiSettings);
+	digitalWrite(DC_PIN, HIGH);
+	digitalWrite(CS_PIN, LOW);
+
+	digitalWrite(RES_PIN, HIGH);
+
+	hspi->transfer (sData, sDataLen);
+
+	digitalWrite(DC_PIN, HIGH);
+	digitalWrite(CS_PIN, HIGH);
+
+	hspi->endTransaction();
+}
+
+
+uint8_t DispST7735::getWidth() {
+  return _width;
+}
+
+uint8_t DispST7735::getHeight() {
+  return _height;
 }

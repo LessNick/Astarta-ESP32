@@ -2,10 +2,13 @@
 
 Net::Net() {}
 
-void Net::init(DispST7735 *disp, Message *winMsg, ConfigParser *cp) {
+void Net::init(DispST7735 *disp, Message *winMsg, ConfigParser *cp, uint16_t mColor, uint16_t mColorBg) {
 	_disp = disp;
 	_winMsg = winMsg;
 	_cp = cp;
+
+  _mColor = mColor;
+  _mColorBg = mColorBg;
 
 	ssid = _cp->getValue("ssid");
 	password = _cp->getValue("password");
@@ -42,6 +45,14 @@ void Net::init(DispST7735 *disp, Message *winMsg, ConfigParser *cp) {
 	
 }
 
+void Net::setSize(uint8_t w, uint8_t h) {
+  _width  = w;
+  _height = h;
+
+  _xPos = (w - 128) / 2;
+  _yPos = (h - 128) / 2;
+}
+
 bool Net::checkWiFi() {
 	wl_status_t status = WiFi.status();
 	if (status == WL_CONNECTED) {
@@ -52,12 +63,10 @@ bool Net::checkWiFi() {
 		LOG.println("IP address: ");
 		LOG.println(WiFi.localIP());
 
-		LOG.println("Contacting Time Server");
+		LOG.println("Contacting Time Server... ");
 #endif
 		configTime(3600 * timeZone, daySaveTime * 3600, "time.nist.gov", "0.pool.ntp.org", "1.pool.ntp.org");
-
 		timeCount = (60 * 1000) - 2000;		// через две секунды обновить время
-
 		timeInited = true;
 
 		ftpServer = new WiFiServer( FTP_CTRL_PORT );
@@ -92,70 +101,107 @@ bool Net::checkWiFi() {
 
 bool Net::update(bool force) {
 	tmStruct.tm_year = 0;
-	getLocalTime(&tmStruct, 5000);
+  try {
+    getLocalTime(&tmStruct, 5000);
 
-	ntd.day = (byte)tmStruct.tm_mday;
-	ntd.month = (byte)tmStruct.tm_mon;
-	ntd.year = (byte)((tmStruct.tm_year + 1900) % 100);
-	ntd.hour = (byte)tmStruct.tm_hour;
-	ntd.minute = (byte)tmStruct.tm_min;
-	ntd.second = (byte)tmStruct.tm_sec;
+    ntd.day = (byte)tmStruct.tm_mday;
+    ntd.month = (byte)tmStruct.tm_mon;
+    ntd.year = (byte)((tmStruct.tm_year + 1900) % 100);
+    ntd.hour = (byte)tmStruct.tm_hour;
+    ntd.minute = (byte)tmStruct.tm_min;
+    ntd.second = (byte)tmStruct.tm_sec;
 
-	// Раз в минуту
-	if (_lastMin != ntd.minute || force) {
+    // Раз в минуту
+    if (_lastMin != ntd.minute || force) {
 
-		_lastMin = ntd.minute;
-		_disp->setBgColor(MENU_TOP_COLOR);
+      _lastMin = ntd.minute;
+      // _disp->setBgColor(MENU_TOP_COLOR);
+      _disp->setBgColor(_mColorBg);
 
-		String h = String(tmStruct.tm_hour);
-		if (tmStruct.tm_hour < 10) h = "0" + h;
-		String m = String(tmStruct.tm_min);
-		if (tmStruct.tm_min < 10) m = "0" + m;
+      String h = String(tmStruct.tm_hour);
+      if (tmStruct.tm_hour < 10) h = "0" + h;
+      String m = String(tmStruct.tm_min);
+      if (tmStruct.tm_min < 10) m = "0" + m;
 
-		_disp->drawFont6String(128-2-(5*6)+4, 2, h + ":", COLOR(255,255,255));
-		_disp->drawFont6String(128-2-(2*6), 2, m, COLOR(255,255,255));
+      // _disp->drawFont6String(128-2-(5*6)+4, 2, h + ":", COLOR(255,255,255));
+      // _disp->drawFont6String(128-2-(2*6), 2, m, COLOR(255,255,255));
 
-	}
+      _disp->drawFont6String(_width - 2-(5*6)+4, 2, h + ":", _mColor);
+      _disp->drawFont6String(_width - 2-(2*6), 2, m, _mColor);
 
-	int _RSSI = WiFi.RSSI();
-	byte RSSI = RSSI_NONE;
+    }
 
-	if (_RSSI <= -30) {
-		RSSI = RSSI_EXCELENT;
-	
-	} else if (_RSSI <= -67) {
-		RSSI = RSSI_VERYGOOD;
+    int _RSSI = WiFi.RSSI();
+    byte RSSI = RSSI_NONE;
 
-	} else if (_RSSI <= -70) {
-		RSSI = RSSI_OKAY;
+    if (_RSSI <= -30) {
+      RSSI = RSSI_EXCELENT;
+    
+    } else if (_RSSI <= -67) {
+      RSSI = RSSI_VERYGOOD;
 
-	} else if (_RSSI <= -80) {
-		RSSI = RSSI_NOTGOOD;
+    } else if (_RSSI <= -70) {
+      RSSI = RSSI_OKAY;
 
-	} else if (_RSSI <= -90) {
-		RSSI = RSSI_UNUSABLE;
-	}
+    } else if (_RSSI <= -80) {
+      RSSI = RSSI_NOTGOOD;
 
-	if (_lastRSSI != RSSI || force) {
-		_lastRSSI = RSSI;
+    } else if (_RSSI <= -90) {
+      RSSI = RSSI_UNUSABLE;
+    }
 
-		const uint8_t *img = none;
+    if (_lastRSSI != RSSI || force) {
+      _lastRSSI = RSSI;
 
-		if (RSSI == RSSI_EXCELENT) {
-			img = excellent;
-		} else if (RSSI == RSSI_VERYGOOD) {
-			img = veryGood;
-		} else if (RSSI == RSSI_OKAY) {
-			img = okay;
-		} else if (RSSI == RSSI_NOTGOOD) {
-			img = notGood;
-		} else if (RSSI == RSSI_UNUSABLE) {
-			img = unusable;
-		} else {
-		}
-		
-		_disp->drawImage(posX, posY, 14, 8, img);
-	}
+      const uint8_t *img = none;
+
+      if (RSSI == RSSI_EXCELENT) {
+        img = excellent;
+      } else if (RSSI == RSSI_VERYGOOD) {
+        img = veryGood;
+      } else if (RSSI == RSSI_OKAY) {
+        img = okay;
+      } else if (RSSI == RSSI_NOTGOOD) {
+        img = notGood;
+      } else if (RSSI == RSSI_UNUSABLE) {
+        img = unusable;
+      } else {
+      }
+      
+      _disp->drawImage(posX, posY, 14, 8, img);
+
+      #ifdef DEBUG
+					LOG.println("[ OK ]");
+
+          LOG.print("Current date/time: ");
+          LOG.print(ntd.day);
+          LOG.print('/');
+          LOG.print(ntd.month);
+          LOG.print('/');
+          LOG.print(ntd.year);
+          LOG.print(' ');
+          LOG.print(ntd.hour);
+          LOG.print(':');
+          LOG.print(ntd.minute);
+          LOG.print(':');
+          LOG.println(ntd.second);
+
+          LOG.print("Signal wi-fi: ");
+          LOG.println(_RSSI);
+
+      #endif
+
+	  }
+
+  } catch( int ErrCode ) {
+
+#ifdef DEBUG
+			LOG.print("net update error=");
+			LOG.println(ErrCode);
+#endif
+
+		 }
+
 
 	return checkFTP();
 }
@@ -180,7 +226,7 @@ bool Net::checkFTP() {
 			*_disp,
 			" Freeze",
 			"FTP mode is activated.\nInterface is frozen.\nDisconnect to continue\nor press RESET!",
-			iconStop, false, false
+			iconStop, false, false, 0
 		);
 
 		rootPath = "/";
@@ -220,6 +266,7 @@ bool Net::checkFTP() {
 					}
 				}
 			}
+			// delay(100);
 		}
 
 		client.stop();
